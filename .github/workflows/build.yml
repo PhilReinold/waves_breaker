@@ -1,0 +1,52 @@
+name: Build Waves Breaker (macOS AU + VST3)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  dsp-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: DSP-Tests (mit AddressSanitizer/UBSan)
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -fsanitize=address,undefined -ISource Tests/dsp_test.cpp -o dsp_test
+          ./dsp_test
+
+  build:
+    needs: dsp-tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCOPY_PLUGIN_AFTER_BUILD=FALSE
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Collect + ad-hoc signieren
+        run: |
+          mkdir -p dist
+          cp -R "build/WavesBreaker_artefacts/Release/AU/Waves Breaker.component" dist/
+          cp -R "build/WavesBreaker_artefacts/Release/VST3/Waves Breaker.vst3" dist/
+          codesign --force --deep --sign - "dist/Waves Breaker.component"
+          codesign --force --deep --sign - "dist/Waves Breaker.vst3"
+
+      - name: Audio-Unit-Validierung (auval, wie Logic)
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "dist/Waves Breaker.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 2
+          auval -a | grep -i "Wbrk" || true
+          auval -strict -v aufx Wbrk Phil
+
+      - name: Zip
+        run: cd dist && zip -r ../WavesBreaker-macOS.zip . && cd ..
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WavesBreaker-macOS
+          path: WavesBreaker-macOS.zip

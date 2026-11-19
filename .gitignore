@@ -1,0 +1,5 @@
+build/
+dist/
+*.zip
+Tests/dsp_test
+.DS_Store
